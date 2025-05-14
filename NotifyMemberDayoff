@@ -4,17 +4,12 @@ function sendChatNotification() {
 
   // 替換為你的多個日曆ID及對應的人員名稱
   var calendarInfo = {
-    'ecohover.kuo@allytransport.com': 'Ecohover Kuo',
-    'nick.lin@allytransport.com': 'Nick Lin',
-    'eric.hsiao@allytransport.com': 'Eric Hsiao',
-    'kenny.liao@allytransport.com': 'Kenny Liao'
+    'ecohover.kuo@allytransport.com': 'Ecohover Kuo'
   };
 
   // 替換為你的多個 Webhook URL
   var webhookUrls = [
-    //'https://chat.googleapis.com/v1/spaces/AAAAUg2CwAM/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=yDLlc8OvA4PjcuTx8eYPJOIA2Q3NV91uxtCQ8tzgC9w',
-    // 以下為被標注的 Webhook URL，保留以備啟用
-    'https://chat.googleapis.com/v1/spaces/AAAA28dY4so/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=izjO4xwaRIo_UH-KmvDCwLejyUArye_9yR2Wn6IijXU'
+    //'https://chat.googleapis.com/v1/spaces/AAAAUg2CwAM/messages?key=--------------------------------',
   ];
 
   // 設置工作時間
