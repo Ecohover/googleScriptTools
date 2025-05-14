@@ -1,0 +1,173 @@
+function sendChatNotification() {
+  // 台灣的國定假日名稱
+  var holidays = ['元旦', '春節', '清明節', '勞動節', '端午節', '中秋節', '國慶日'];
+
+  // 替換為你的多個日曆ID及對應的人員名稱
+  var calendarInfo = {
+    'ecohover.kuo@allytransport.com': 'Ecohover Kuo',
+    'nick.lin@allytransport.com': 'Nick Lin',
+    'eric.hsiao@allytransport.com': 'Eric Hsiao',
+    'kenny.liao@allytransport.com': 'Kenny Liao'
+  };
+
+  // 替換為你的多個 Webhook URL
+  var webhookUrls = [
+    //'https://chat.googleapis.com/v1/spaces/AAAAUg2CwAM/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=yDLlc8OvA4PjcuTx8eYPJOIA2Q3NV91uxtCQ8tzgC9w',
+    // 以下為被標注的 Webhook URL，保留以備啟用
+    'https://chat.googleapis.com/v1/spaces/AAAA28dY4so/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=izjO4xwaRIo_UH-KmvDCwLejyUArye_9yR2Wn6IijXU'
+  ];
+
+  // 設置工作時間
+  var workStartTime = "09:00";
+  var workEndTime = "18:00";
+
+  // 獲取當天的日期
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // 檢查是否是週末
+  var dayOfWeek = today.getDay();
+  var isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
+  // 設置台灣公共假日日曆 ID
+  var calendarId = 'zh_tw.taiwan#holiday@group.v.calendar.google.com';
+  var events;
+
+  try {
+    events = Calendar.Events.list(calendarId, {
+      timeMin: today.toISOString(),
+      timeMax: (new Date(today.getTime() + 24 * 60 * 60 * 1000)).toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime'
+    }).items;
+  } catch (e) {
+    Logger.log('Error fetching holiday calendar: ' + e.toString());
+    return;
+  }
+
+  var isHoliday = false;
+  var isMakeupWorkday = false;
+
+  // 判斷是否為國定假日或補班日
+  events.forEach(function (event) {
+    if (holidays.includes(event.summary)) {
+      isHoliday = true; // 國定假日
+    } else if (isWeekend && event.summary.includes('補班')) {
+      isMakeupWorkday = true; // 補班日
+    }
+  });
+
+  // 規則：國定假日或一般週末（非補班）不執行
+  if (isHoliday || (isWeekend && !isMakeupWorkday)) {
+    return; // 不執行通知
+  }
+
+  var tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  var formattedDate = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var messageText = '今天 (' + formattedDate + ') 的請假人員:\n';
+  var hasOutOfOfficeEvent = false;
+
+  // 收集請假資訊
+  var leaveInfo = {};
+
+  // 遍歷所有日曆 ID
+  for (var calId in calendarInfo) {
+    var events = CalendarApp.getCalendarById(calId).getEvents(today, tomorrow);
+    events.forEach(function (event) {
+      if (isOutOfOffice(event)) { // 判斷是否為請假事件
+        var personName = calendarInfo[calId];
+        if (!leaveInfo[personName]) {
+          leaveInfo[personName] = [];
+        }
+        if (event.isAllDayEvent() || isFullWorkday(event.getStartTime(), event.getEndTime(), workStartTime, workEndTime)) {
+          leaveInfo[personName].push('全天');
+        } else {
+          var timeRanges = calculateMultipleTimeRanges(event.getStartTime(), event.getEndTime(), workStartTime, workEndTime);
+          timeRanges.forEach(function (range) {
+            leaveInfo[personName].push('(' + range.start + ' - ' + range.end + ')');
+          });
+        }
+        hasOutOfOfficeEvent = true;
+      }
+    });
+  }
+
+  if (!hasOutOfOfficeEvent) {
+    messageText = '今天 (' + formattedDate + ') 沒有請假人員。';
+  } else {
+    for (var person in leaveInfo) {
+      var timeText = leaveInfo[person].includes('全天') ? '' : leaveInfo[person].join(' ');
+      messageText += '- ' + person + ' ' + timeText + '\n';
+    }
+  }
+
+  // 發送通知
+  sendNotification(messageText, webhookUrls);
+
+  // 如果是週末且是補班日，發送補班通知
+  if (isMakeupWorkday) {
+    var makeupWorkMessage = '今天 (' + formattedDate + ') 是補班日，請注意。';
+    sendNotification(makeupWorkMessage, webhookUrls);
+  }
+}
+
+// 判斷是否為完整工作日
+function isFullWorkday(eventStart, eventEnd, workStartTime, workEndTime) {
+  var workStart = parseTime(workStartTime);
+  var workEnd = parseTime(workEndTime);
+
+  var eventStartTime = new Date(eventStart);
+  var eventEndTime = new Date(eventEnd);
+
+  return eventStartTime <= workStart && eventEndTime >= workEnd;
+}
+
+// 計算事件時間與工作時間的多段交集
+function calculateMultipleTimeRanges(eventStart, eventEnd, workStartTime, workEndTime) {
+  var workStart = parseTime(workStartTime);
+  var workEnd = parseTime(workEndTime);
+
+  var eventStartTime = new Date(eventStart);
+  var eventEndTime = new Date(eventEnd);
+
+  var timeRanges = [];
+  var currentStart = eventStartTime > workStart ? eventStartTime : workStart;
+  var currentEnd = eventEndTime < workEnd ? eventEndTime : workEnd;
+
+  if (currentStart < currentEnd) {
+    timeRanges.push({
+      start: Utilities.formatDate(currentStart, Session.getScriptTimeZone(), 'HH:mm'),
+      end: Utilities.formatDate(currentEnd, Session.getScriptTimeZone(), 'HH:mm')
+    });
+  }
+  return timeRanges;
+}
+
+// 將時間字串轉為 Date 對象
+function parseTime(timeStr) {
+  var today = new Date();
+  var parts = timeStr.split(":");
+  today.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+  return today;
+}
+
+// 發送 Google Chat 通知
+function sendNotification(messageText, webhookUrls) {
+  webhookUrls.forEach(function (url) {
+    var message = { 'text': messageText };
+    var options = {
+      'method': 'post',
+      'contentType': 'application/json',
+      'payload': JSON.stringify(message)
+    };
+    UrlFetchApp.fetch(url, options);
+  });
+}
+
+// 判斷是否為請假事件
+function isOutOfOffice(event) {
+  var title = event.getTitle().toLowerCase();
+  return title.includes('out of office') || title.includes('假') || title.includes('補休') || title.includes('特休'); // 假設標題包含這些字樣表示請假
+}
